@@ -1,3 +1,4 @@
+from pathlib import Path
 import os
 import shutil
 from configparser import ConfigParser
@@ -12,10 +13,10 @@ def get_config():
     parser.read('results_summary.cfg')
     delete_temp_files = bool(parser.get('inputs', 'delete_temp_files'))
     base_name = parser.get('inputs', 'base_name')
-    base_folder = parser.get('inputs', 'base_folder')
+    base_folder = Path(parser.get('inputs', 'base_folder'))
     base_ain = parser.get('inputs', 'base_ain')
     dev_name = parser.get('inputs', 'dev_name')
-    dev_folder = parser.get('inputs', 'dev_folder')
+    dev_folder = Path(parser.get('inputs', 'dev_folder'))
     dev_ain = parser.get('inputs', 'dev_ain')
     file_dict = {base_name: (base_folder, base_ain),
                  dev_name: (dev_folder, dev_ain)}
@@ -313,43 +314,47 @@ def init_inputs_global(calc_settings_dict, lob_settings_dict, models):
     return df, lob_list
 
 
-def find_file(folder, ain, run_num, res_file):
-    def get_file(pattern, run_num):
-        matches = glob(pattern.format(run_num))
-        matches = [f for f in matches if '.afd' not in f.lower()]
-        if len(matches) < 1:
-            return ''
-        else:
-            matches.sort(key=os.path.getmtime, reverse=True)
-            return matches[0]
+def get_file(path, pattern_format, run_num):
+    pattern = pattern_format.format(run_num)
+    matches = [f for f in path.glob(pattern) if str(f)[-4].lower() != '.afd']
+    if len(matches) < 1:
+        return None
+    else:
+        matches.sort(key=os.path.getmtime, reverse=True)
+        return matches[0]
 
-    pattern = os.path.join(folder, f'{ain}.Proj.{{0}}.Run.{{0}}.*{res_file}*')
+
+def find_file(folder, ain, run_num, res_file):
+    pattern = f'{ain}.Proj.{{0}}.Run.{{0}}.*{res_file}*'
     if len(run_num) == 1:
-        return get_file(pattern, run_num[0])
+        return get_file(folder, pattern, run_num[0])
     else:
         file_dict = {}
         stat_list = ['AG33', 'ss', 'bar', 'tax', 'tax_43']
         for r, s in zip(run_num, stat_list):
             if r:
-                file_dict[s] = get_file(pattern, r)
+                file_dict[s] = get_file(folder, pattern, r)
             else:
                 file_dict[s] = None
         return file_dict
 
 
 def get_file_state(results, summary):
+    check_res = False
     if type(results) == dict:
-        check_res = os.path.isfile(results['AG33'])
+        if results['AG33']:
+            check_res = results['AG33'].is_file()
         file_times = []
-        for f in [v for v in results.values() if v]:
-            if os.path.isfile(f):
-                file_times.append(os.path.getmtime(f))
+        for f in results.values():
+            if f and f.is_file():
+                file_times.append(f.stat().st_mtime)
         res_time = max(file_times) if check_res else 0
     else:
-        check_res = os.path.isfile(results)
-        res_time = os.path.getmtime(results) if check_res else 0
-    check_sum = os.path.isfile(summary)
-    sum_time = os.path.getmtime(summary) if check_sum else 0
+        if results:
+            check_res = results.is_file()
+        res_time = results.stat().st_mtime if check_res else 0
+    check_sum = summary.is_file()
+    sum_time = summary.stat().st_mtime if check_sum else 0
     if sum_time > res_time:
         return 1    # summary file already exists and is current
     elif check_res:
@@ -368,7 +373,7 @@ def get_columns(results_file, variables, filter_column,
         columns.append('VarName')
         with open(results_file) as f:
             all_columns = f.readline().strip().split('\t')
-        if 'Cyclical' in results_file:
+        if 'Cyclical' in str(results_file):
             val_cols = [c for c in all_columns if '/' in c]
         else:
             val_cols = [c for c in all_columns if 'Value' in c]
@@ -431,7 +436,7 @@ def stat_calcs(file_dict, variables, calc_var,
 
     def read_file(file_name, file_dict, cols, filter_type, column, values):
         path = file_dict[file_name]
-        if path is None or len(path) == 0:
+        if path is None or len(str(path)) == 0:
             return None
         else:
             print(f'\t\t\treading {file_name}')
@@ -555,7 +560,7 @@ def do_calcs(results_file, summary_file, variables, sign, calc_type,
                 var_col_files = ['Cyclical', 'SubTotal', 'Total001']
 
                 use_var_col = len([c for c in var_col_files
-                                   if c in results_file])
+                                   if c in str(results_file)])
 
                 usecols = get_columns(results_file, variables, filter_column,
                                       use_var_col, calc_type)
@@ -614,14 +619,11 @@ def main():
         print(model)
         folder, ain = file_inputs
 
-        temp_folder = os.path.join(folder, '.results_summary_temp')
-        if delete_temp_files:
-            if os.path.exists(temp_folder):
-                shutil.rmtree(temp_folder)
-            os.makedirs(temp_folder)
-        else:
-            if not os.path.exists(temp_folder):
-                os.makedirs(temp_folder)
+        temp_folder = folder.joinpath('.results_summary_temp')
+        if delete_temp_files and temp_folder.is_dir():
+            shutil.rmtree(temp_folder)
+        if not temp_folder.is_dir():
+            temp_folder.mkdir()
 
         for lob in lob_list:
             print('\t{}'.format(lob))
@@ -643,8 +645,9 @@ def main():
                 calc_var = get_calc_var(c, calc_settings_dict)
                 run_num = calc_dict[c]
                 results_file = find_file(folder, ain, run_num, res_file)
-                summary_file = f'results_summary_{lob}_{c}_{model}.txt'
-                summary_file = os.path.join(temp_folder, summary_file)
+
+                summary_file = temp_folder.joinpath(f'results_summary'
+                                                    f'_{lob}_{c}_{model}.txt')
 
                 calc_results = do_calcs(results_file, summary_file,
                                         variables, sign, calc_type,
@@ -657,7 +660,7 @@ def main():
     df_summary.loc['diff'] = (df_summary.loc[dev_name]
                               - df_summary.loc[base_name]).values
     df_summary = df_summary.fillna('n/a')
-    df_summary.to_csv('Results_Summary_{}.csv'.format(dev_name))
+    df_summary.to_csv(f'Results_Summary_{dev_name}.csv')
 
 
 main()

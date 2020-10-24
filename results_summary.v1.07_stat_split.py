@@ -3,13 +3,12 @@ import shutil
 from configparser import ConfigParser
 import pandas as pd
 import numpy as np
-import numpy_financial as npf
 from glob import glob
 
 
 def get_config():
     parser = ConfigParser()
-    parser.read('results_summary.cfg')
+    parser.read('results_summary.test.cfg')
     delete_temp_files = bool(parser.get('inputs', 'delete_temp_files'))
     base_name = parser.get('inputs', 'base_name')
     base_folder = parser.get('inputs', 'base_folder')
@@ -84,7 +83,7 @@ def calc_settings():
                                               '_ts_ELastValue')},
                          'sign': None,
                          'calc_type': 'stat',
-                         'calc_var': ['STATRESERVE', 'TAXRESERVE',
+                         'calc_var': ['STAT_33', 'STAT_43', 'TAX_33', 'TAX_43',
                                       'DE_STATRESERVE'],
                          'res_file': 'InvStatProd',
                          'filter_column': 'Company',
@@ -197,8 +196,9 @@ def get_lob_settings_dict():
                          'company_list': ['DELLIC', 'DEIIC', 'VOYA'],
                          'stat_files': (7, 8, 9, 10, 11)},
 
-                'aade': {'calcs': [('payout', 58), ('f133', 4), ('stat', None), ('dac', 1),
-                                   ('sop_pre', 2), ('sop_full', 3), ('rm', 12)],
+                'aade': {'calcs': [('f133', 4), ('stat', None), ('dac', 1),
+                                   ('sop_pre', 2), ('sop_full', 3),
+                                   ('rm', 12)],
                          'filter_type': 'keep',
                          'cohort_list': ['DA', 'EIA', 'EIX12', 'EIX13',
                                          'EIX14', 'EIX15', 'EIXACQI',
@@ -209,7 +209,7 @@ def get_lob_settings_dict():
                                          'MYGA', 'REG11', 'REG12', 'REG13',
                                          'REG14', 'REG15', 'REGACQ',
                                          'AEGON_TDA', 'LIBERTY_TDA'],
-                         'company_list': ['DELLIC', 'DEIIC', 'AADE', 'IIC'],
+                         'company_list': ['DELLIC', 'DEIIC'],
                          'stat_files': (7, None, None, 10, None)},
 
                 'voya': {'calcs': [('f133', 44), ('payout', 57),
@@ -404,7 +404,7 @@ def rm_calcs(df, sign):
     df = (df * sign).sum(axis=1)
     duration = np.arange(.25, 50.25, .25)
     wal = np.average(duration, weights=df.loc['Value001':])
-    cof = (1 + npf.irr(df)) ** 4 - 1
+    cof = (1 + np.irr(df)) ** 4 - 1
     df = pd.DataFrame({'WAL': [wal], 'COF': [cof]})
     return df
 
@@ -413,7 +413,7 @@ def nb_calc(df, sign):
     first_values = df.loc[['Value001', 'Value002'], 'CashPrem'].values
     df.loc[['Value000', 'Value001'], 'CashPrem'] = first_values
     df = (df * sign).sum(axis=1)
-    cof = (1 + npf.irr(df)) ** 4 - 1
+    cof = (1 + np.irr(df)) ** 4 - 1
     return cof
 
 
@@ -512,7 +512,7 @@ def stat_calcs(file_dict, variables, calc_var,
 
         AG33['TAXRESERVE'] = AG33[['TAXRESERVE', 'taxcap']].min(axis=1)
 
-    for c in calc_var:
+    for c in ['STATRESERVE', 'DE_STATRESERVE', 'TAXRESERVE']:
         if c in AG33:
             AG33.loc[:, c] = AG33[c] * AG33['AG33apply']
 
@@ -526,14 +526,19 @@ def stat_calcs(file_dict, variables, calc_var,
             bar['TAXRESERVE'] = bar[['STATRESERVE', 'tax_no_cap']].min(axis=1)
             bar['DE_STATRESERVE'] = np.nan
 
-    stat_sum = pd.Series(dict(zip(calc_var, [np.nan] * 3)))
-    stat_sum.STATRESERVE = AG33['STATRESERVE'].sum()
+    stat_sum = pd.Series(dict(zip(calc_var, [np.nan] * len(calc_var))))
+    stat_sum['STAT_33'] = AG33['STATRESERVE'].sum()
+
     if AG43_flag:
-        stat_sum.STATRESERVE += bar['STATRESERVE'].sum()
+        stat_sum['STAT_43'] = bar['STATRESERVE'].sum()
+
     if tax_flag:
-        stat_sum[calc_var[1:]] = AG33[calc_var[1:]].sum()
+
+        stat_sum[['TAX_33', 'DE_STATRESERVE']] \
+            = AG33[['TAXRESERVE', 'DE_STATRESERVE']].sum()
+
     if AG43_tax_flag:
-        stat_sum[calc_var[1:]] += bar[calc_var[1:]].sum()
+        stat_sum['TAX_43'] = bar['TAXRESERVE'].sum()
 
     return pd.DataFrame(stat_sum).T
 
@@ -591,7 +596,7 @@ def do_calcs(results_file, summary_file, variables, sign, calc_type,
                     else:
                         df = df.iloc[1:]
 
-                        pv_ben = (npf.npv(rate, (df * sign).sum(axis=1))
+                        pv_ben = (np.npv(rate, (df * sign).sum(axis=1))
                                   / (1 + rate))
 
                         df = pd.DataFrame({'PV': [pv_ben]})

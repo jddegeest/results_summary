@@ -3,7 +3,6 @@ import shutil
 from configparser import ConfigParser
 import pandas as pd
 import numpy as np
-import numpy_financial as npf
 from glob import glob
 
 
@@ -193,8 +192,15 @@ def get_lob_settings_dict():
                                          'RLI_TDA_NOIR_MYGA',
                                          'AADE_DD06_TDA_NOIR', 'AEGON_TDA',
                                          'LIBERTY_TDA', 'AHL_LNC_FIA_NOIR',
-                                         'AHL_LNC_TDA_NOIR', 'LNC_FIA_P2018'],
-                         'company_list': ['DELLIC', 'DEIIC', 'VOYA'],
+                                         'AHL_LNC_TDA_NOIR', 'LNC_FIA_P2018',
+                                         'AANY_TDA',
+                                         'ALICNY_PAYOUT_LC',
+                                         'ALICNY_PAYOUT_LC_SC',
+                                         'ALICNY_PAYOUT_NLC',
+                                         'ALICNY_PAYOUT_NLC_SC',
+                                         'ALICNY_TDA'],
+                         'company_list': ['DELLIC', 'DEIIC', 'VOYA',
+                                          'AANY', 'ALICNY', 'BNY'],
                          'stat_files': (7, 8, 9, 10, 11)},
 
                 'aade': {'calcs': [('payout', 58), ('f133', 4), ('stat', None), ('dac', 1),
@@ -266,7 +272,21 @@ def get_lob_settings_dict():
                                    ('rm', 141)],
                          'filter_type': None,
                          'cohort_list': [],
-                         'company_list': []}
+                         'company_list': []},
+
+                'aany': {'calcs': [('payout', 17),
+                                   ('stat', None), ('dac', 1),
+
+                                   ('rm', 12)],
+                         'filter_type': 'keep',
+                         'cohort_list': ['AANY_TDA',
+                                         'ALICNY_PAYOUT_LC',
+                                         'ALICNY_PAYOUT_LC_SC',
+                                         'ALICNY_PAYOUT_NLC',
+                                         'ALICNY_PAYOUT_NLC_SC',
+                                         'ALICNY_TDA'],
+                         'company_list': ['AANY', 'ALICNY', 'BNY'],
+                         'stat_files': (7, 8, 9, 10, 11)},
                 }
 
     return settings
@@ -404,7 +424,7 @@ def rm_calcs(df, sign):
     df = (df * sign).sum(axis=1)
     duration = np.arange(.25, 50.25, .25)
     wal = np.average(duration, weights=df.loc['Value001':])
-    cof = (1 + npf.irr(df)) ** 4 - 1
+    cof = (1 + np.irr(df)) ** 4 - 1
     df = pd.DataFrame({'WAL': [wal], 'COF': [cof]})
     return df
 
@@ -413,7 +433,7 @@ def nb_calc(df, sign):
     first_values = df.loc[['Value001', 'Value002'], 'CashPrem'].values
     df.loc[['Value000', 'Value001'], 'CashPrem'] = first_values
     df = (df * sign).sum(axis=1)
-    cof = (1 + npf.irr(df)) ** 4 - 1
+    cof = (1 + np.irr(df)) ** 4 - 1
     return cof
 
 
@@ -591,7 +611,7 @@ def do_calcs(results_file, summary_file, variables, sign, calc_type,
                     else:
                         df = df.iloc[1:]
 
-                        pv_ben = (npf.npv(rate, (df * sign).sum(axis=1))
+                        pv_ben = (np.npv(rate, (df * sign).sum(axis=1))
                                   / (1 + rate))
 
                         df = pd.DataFrame({'PV': [pv_ben]})

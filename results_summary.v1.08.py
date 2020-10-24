@@ -8,7 +8,7 @@ from glob import glob
 
 def get_config():
     parser = ConfigParser()
-    parser.read('results_summary.test.cfg')
+    parser.read('results_summary.cfg')
     delete_temp_files = bool(parser.get('inputs', 'delete_temp_files'))
     base_name = parser.get('inputs', 'base_name')
     base_folder = parser.get('inputs', 'base_folder')
